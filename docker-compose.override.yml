@@ -1,0 +1,24 @@
+# docker-compose.override.yml — DGX Spark deployment overrides.
+#
+# Docker Compose automatically merges this file; no extra flags needed.
+# Tracked on rts-integration branch — do NOT merge into upstream main.
+#
+# What this changes:
+#   • SearXNG host port remapped from 8080 → 8088
+#     (port 8080 is occupied on dgx-spark by another service)
+#
+# What stays in .env (not tracked in git):
+#   • APP_BIND, APP_PORT         — network binding
+#   • COMPOSE_FILE               — GPU overlay activation
+#   • ENABLE_SIGNUP, WEBUI_URL   — auth hardening (see setup.sh)
+#   • PUID, PGID                 — host user mapping
+#
+# See .env.dgx.example for a full template.
+
+services:
+  searxng:
+    # Port 8080 conflicts with another service on dgx-spark.
+    # Remap to 8088 on the loopback only.  Internal container-to-container
+    # traffic (SEARXNG_INSTANCE=http://searxng:8080) is unaffected.
+    ports:
+      - "127.0.0.1:8088:8080"
