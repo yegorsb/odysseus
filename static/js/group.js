@@ -172,6 +172,8 @@ function _initGroupTab() {
           modelDisplay: p.display,
           characterId: p.character?.characterId || null,
           characterName: p.character?.characterName || null,
+          endpointId: p.endpointId || null,
+          url: p.url || null,
         })),
       };
       try {
@@ -246,12 +248,20 @@ function _initGroupTab() {
           const [models, chars] = await Promise.all([_getModels(), _getCharacterList()]);
           _groupParticipants.length = 0;
           (g.participants || []).forEach(p => {
-            const model = models.find(m => m.mid === p.modelId) || models[0];
-            const entry = { model: model || null, character: null };
+            let model = null;
+            // Prefer exact match on both modelId + endpointId
+            if (p.endpointId) model = models.find(m => m.mid === p.modelId && m.endpointId === p.endpointId);
+            // Fall back to modelId-only match
+            if (!model) model = models.find(m => m.mid === p.modelId);
+            // If not in live model list but we have stored endpoint info, reconstruct
+            if (!model && p.url) model = { mid: p.modelId, display: p.modelDisplay || p.modelId.split('/').pop(), url: p.url, endpointId: p.endpointId || '' };
+            // Don't silently fall back to models[0] — that routes to the wrong endpoint
+            if (!model) { console.warn('[group] Preset participant not found, skipping:', p); return; }
+            const entry = { model, character: null };
             if (p.characterId) {
               entry.character = chars.find(c => c.id === p.characterId) || null;
             }
-            if (entry.model) _groupParticipants.push(entry);
+            _groupParticipants.push(entry);
           });
           _mode = g.mode || 'parallel';
           _render();
