@@ -259,7 +259,8 @@ function _initGroupTab() {
             if (!model) { console.warn('[group] Preset participant not found, skipping:', p); return; }
             const entry = { model, character: null };
             if (p.characterId) {
-              entry.character = chars.find(c => c.id === p.characterId) || null;
+              entry.character = chars.find(c => c.id === p.characterId)
+                || (p.characterName ? { id: p.characterId, name: p.characterName, prompt: '' } : null);
             }
             _groupParticipants.push(entry);
           });
@@ -312,7 +313,9 @@ async function _getCharacterList() {
   try {
     const r = await fetch(API_BASE + '/api/presets/templates', { credentials: 'same-origin' });
     const data = await r.json();
-    (data.templates || []).forEach(t => {
+    // API returns a plain array; older code expected {templates:[]} — handle both
+    const tList = Array.isArray(data) ? data : (data.templates || []);
+    tList.forEach(t => {
       if (t.isCharacter && !chars.find(c => c.id === t.id)) {
         chars.push({ id: t.id, name: t.name, prompt: t.prompt || '' });
       }
