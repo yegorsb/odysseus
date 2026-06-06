@@ -109,7 +109,8 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
             last_msg_map = {}
             mode_map = {}
             msg_count_map = {}
-            rows = db.query(DbSession.id, DbSession.folder, DbSession.total_input_tokens, DbSession.total_output_tokens, DbSession.is_important, DbSession.created_at, DbSession.updated_at, DbSession.last_message_at, DbSession.mode, DbSession.message_count).filter(DbSession.archived == False).all()
+            group_data_map = {}
+            rows = db.query(DbSession.id, DbSession.folder, DbSession.total_input_tokens, DbSession.total_output_tokens, DbSession.is_important, DbSession.created_at, DbSession.updated_at, DbSession.last_message_at, DbSession.mode, DbSession.message_count, DbSession.group_data).filter(DbSession.archived == False).all()
             for row in rows:
                 folder_map[row.id] = row.folder
                 token_map[row.id] = (row.total_input_tokens or 0) + (row.total_output_tokens or 0)
@@ -125,6 +126,10 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
                 )
                 mode_map[row.id] = row.mode
                 msg_count_map[row.id] = row.message_count or 0
+                try:
+                    group_data_map[row.id] = json.loads(row.group_data) if row.group_data else None
+                except (json.JSONDecodeError, TypeError):
+                    group_data_map[row.id] = None
             # Sessions with active documents that have content
             from sqlalchemy import func
             doc_session_ids = set(
@@ -153,7 +158,8 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
                      "has_documents": s.id in doc_session_ids,
                      "has_images": s.id in img_session_ids,
                      "mode": mode_map.get(s.id),
-                     "message_count": msg_count_map.get(s.id, 0)}
+                     "message_count": msg_count_map.get(s.id, 0),
+                     "group_data": group_data_map.get(s.id)}
                     for s in user_sessions.values()
                     if not s.archived
                     and (s.name or "").strip() not in ("Nobody", "Incognito")]
@@ -702,6 +708,33 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
 
         except KeyError:
             raise HTTPException(404, f"Session {session_id} not found")
+
+    @router.post("/session/{session_id}/set_group")
+    async def set_group_data(request: Request, session_id: str):
+        """Store group-chat participant metadata on a session (called by bridge after game setup)."""
+        _verify_session_owner(request, session_id)
+        body = await request.json()
+        group_data_str = json.dumps({
+            "participant_ids": body.get("participant_ids", []),
+            "models": body.get("models", []),
+        })
+        db = SessionLocal()
+        try:
+            db_session = db.query(DbSession).filter(DbSession.id == session_id).first()
+            if not db_session:
+                raise HTTPException(404, f"Session {session_id} not found")
+            db_session.group_data = group_data_str
+            db_session.updated_at = datetime.utcnow()
+            db.commit()
+            return {"ok": True}
+        except HTTPException:
+            raise
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error setting group data for session {session_id}: {e}")
+            raise HTTPException(500, "Failed to set group data")
+        finally:
+            db.close()
 
     @router.post("/session/{session_id}/compact")
     async def compact_session(request: Request, session_id: str):

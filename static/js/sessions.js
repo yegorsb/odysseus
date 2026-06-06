@@ -1647,7 +1647,13 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
       window.chatModule.checkPendingResearch(id);
     }
     // Restore group chat state if this is a group session
-    if (window.groupModule && window.groupModule.restoreState && window.groupModule.restoreState(id)) {
+    let _groupRestored = !!(window.groupModule && window.groupModule.restoreState && window.groupModule.restoreState(id));
+    if (!_groupRestored && window.groupModule && window.groupModule.activateFromServerData && meta && meta.group_data) {
+      const gd = meta.group_data;
+      window.groupModule.activateFromServerData(gd.models || [], gd.participant_ids || [], id);
+      _groupRestored = true;
+    }
+    if (_groupRestored) {
       if (window._syncGroupIndicator) window._syncGroupIndicator(true);
       // Hide model picker for group sessions
       const _mpw = document.getElementById('model-picker-wrap');

@@ -108,6 +108,7 @@ class Session(TimestampMixin, Base):
     total_output_tokens = Column(Integer, default=0)
     mode = Column(String, nullable=True)  # 'agent', 'chat', or 'research'
     crew_member_id = Column(String, nullable=True)  # links to crew_members.id
+    group_data = Column(Text, nullable=True)  # JSON: {participant_ids, models} for bridge-created group sessions
 
     # Relationship to chat messages
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
@@ -1483,6 +1484,19 @@ def _migrate_seed_email_account():
         logging.getLogger(__name__).warning(f"seed email account migration: {e}")
 
 
+def _migrate_add_group_data_column():
+    """Add group_data TEXT column to sessions for bridge-created group session metadata."""
+    try:
+        with engine.connect() as conn:
+            cols = [r[1] for r in conn.execute(text("PRAGMA table_info(sessions)"))]
+            if "group_data" not in cols:
+                conn.execute(text("ALTER TABLE sessions ADD COLUMN group_data TEXT"))
+                conn.commit()
+                logging.getLogger(__name__).info("Migrated: added 'group_data' column to sessions")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"group_data migration: {e}")
+
+
 def init_db():
     """
     Initialize the database by creating all tables.
@@ -1517,6 +1531,7 @@ def init_db():
     _migrate_drop_ping_notes_tasks()
     _migrate_add_crew_member_id()
     _migrate_add_assistant_columns()
+    _migrate_add_group_data_column()
     _migrate_seed_email_account()
     _migrate_add_calendar_metadata()
     _migrate_add_calendar_is_utc()

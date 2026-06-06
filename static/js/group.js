@@ -964,10 +964,24 @@ export function restoreState(sessionId) {
 export function getModels() { return _models; }
 export function getModelCount() { return _models.length; }
 
+/**
+ * Activate group mode from server-stored metadata (bridge-created game sessions).
+ * Called by sessions.js when a selected session has group_data from /api/sessions.
+ * participant_ids are the real Alpha/Beta session IDs; models is [{mid, display, url, endpointId}].
+ */
+export function activateFromServerData(models, participantIds, parentSessionId) {
+  _active = true;
+  _mode = 'parallel';
+  _models = models;
+  _participantSessions = participantIds;
+  _parentSessionId = parentSessionId;
+  _roundRobinIdx = 0;
+}
+
 const groupModule = {
   init, isActive, setActive, getMode, setMode, showModelPicker,
   startGroup, stopGroup, sendMessage, restoreState,
-  getModels, getModelCount,
+  getModels, getModelCount, activateFromServerData,
 };
 
 export default groupModule;
