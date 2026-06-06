@@ -794,6 +794,7 @@ async function _streamToHolder(modelIdx, sessionId, msg, holderEl, abortCtrl) {
   const fd = new FormData();
   fd.append('message', msg);
   fd.append('session', sessionId);
+  fd.append('mode', 'chat'); // group chat must not use agent mode (no tools)
 
   let accumulated = '';
   let _buffer = '';
