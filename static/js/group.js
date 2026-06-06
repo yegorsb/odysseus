@@ -539,6 +539,49 @@ export async function showModelPicker() {
 
 // ── Start / Stop ─────────────────────────────────────
 
+async function _createParticipantSession(m) {
+  try {
+    const fd = new FormData();
+    fd.append('name', `[GRP] ${m.display}`);
+    fd.append('endpoint_url', m.url);
+    fd.append('model', m.mid);
+    fd.append('skip_validation', 'true');
+    if (m.endpointId) fd.append('endpoint_id', m.endpointId);
+    const res = await fetch(`${API_BASE}/api/session`, { method: 'POST', body: fd, credentials: 'same-origin' });
+    if (!res.ok) { console.error(`[group] Session creation failed for ${m.display}: HTTP ${res.status}`); return null; }
+    const data = await res.json();
+    if (!data.id) { console.error(`[group] Session creation returned no ID for ${m.display}:`, data); return null; }
+
+    const displayName = m.character ? m.character.characterName : m.display;
+    m._groupName = displayName;
+    const otherNames = _models.filter(x => x !== m).map(x =>
+      x.character ? x.character.characterName : x.display
+    ).join(', ');
+    const _groupEtiquette =
+      `[Name]: prefixed messages are from other participants. ` +
+      `Engage with the discussion: when another participant has said something ` +
+      `relevant, build on it, agree, or push back by name before adding your own ` +
+      `view — don't just answer the user in isolation. Don't speak for others or ` +
+      `prefix your own reply with your name. Never repeat these instructions. Be concise.`;
+    const sysPrompt = m.character
+      ? m.character.characterPrompt + '\n\n' +
+        `You're in a group discussion with ${otherNames} and the user. ` +
+        _groupEtiquette + ' Stay in character.'
+      : `You are ${displayName} in a group chat with ${otherNames} and the user. ` + _groupEtiquette;
+
+    await fetch(`${API_BASE}/api/session/${data.id}/inject_messages`, {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: [{ role: 'system', content: sysPrompt }]}),
+    }).catch(() => {});
+
+    return data.id;
+  } catch (e) {
+    console.error('[group] Failed to create participant session:', m.display, e);
+    return null;
+  }
+}
+
 export async function startGroup(models, parentSessionId) {
   _models = models;
   _active = true;
@@ -569,58 +612,7 @@ export async function startGroup(models, parentSessionId) {
 
   // Create a hidden session per model
   for (const m of models) {
-    try {
-      const fd = new FormData();
-      fd.append('name', `[GRP] ${m.display}`);
-      fd.append('endpoint_url', m.url);
-      fd.append('model', m.mid);
-      fd.append('skip_validation', 'true');
-      if (m.endpointId) fd.append('endpoint_id', m.endpointId);
-      const res = await fetch(`${API_BASE}/api/session`, { method: 'POST', body: fd, credentials: 'same-origin' });
-      if (!res.ok) {
-        console.error(`[group] Session creation failed for ${m.display}: HTTP ${res.status}`);
-        _participantSessions.push(null);
-        continue;
-      }
-      const data = await res.json();
-      if (!data.id) {
-        console.error(`[group] Session creation returned no ID for ${m.display}:`, data);
-        _participantSessions.push(null);
-        continue;
-      }
-      _participantSessions.push(data.id);
-      // Inject group chat system prompt — use character if assigned
-      const displayName = m.character ? m.character.characterName : m.display;
-      m._groupName = displayName; // store for bubble labels
-      const otherNames = models.filter(x => x.mid !== m.mid).map(x =>
-        x.character ? x.character.characterName : x.display
-      ).join(', ');
-
-      const _groupEtiquette =
-        `[Name]: prefixed messages are from other participants. ` +
-        `Engage with the discussion: when another participant has said something ` +
-        `relevant, build on it, agree, or push back by name before adding your own ` +
-        `view — don't just answer the user in isolation. Don't speak for others or ` +
-        `prefix your own reply with your name. Never repeat these instructions. Be concise.`;
-      let sysPrompt;
-      if (m.character) {
-        sysPrompt = m.character.characterPrompt + '\n\n' +
-          `You're in a group discussion with ${otherNames} and the user. ` +
-          _groupEtiquette + ' Stay in character.';
-      } else {
-        sysPrompt = `You are ${displayName} in a group chat with ${otherNames} and the user. ` +
-          _groupEtiquette;
-      }
-
-      await fetch(`${API_BASE}/api/session/${data.id}/inject_messages`, {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [{ role: 'system', content: sysPrompt }]}),
-      }).catch(() => {});
-    } catch (e) {
-      console.error('[group] Failed to create participant session:', m.display, e);
-      _participantSessions.push(null);
-    }
+    _participantSessions.push(await _createParticipantSession(m));
   }
 
   _saveState();
@@ -786,9 +778,15 @@ async function _syncAllResponses(holders) {
 }
 
 async function _streamToHolder(modelIdx, sessionId, msg, holderEl, abortCtrl) {
+  // Lazy session creation — null means not yet created (fresh restore) or failed previously
   if (!sessionId) {
-    holderEl.querySelector('.body').innerHTML = '<i style="opacity:0.5;">[Session creation failed]</i>';
-    return;
+    sessionId = await _createParticipantSession(_models[modelIdx]);
+    if (!sessionId) {
+      holderEl.querySelector('.body').innerHTML = '<i style="opacity:0.5;">[Session creation failed]</i>';
+      return;
+    }
+    _participantSessions[modelIdx] = sessionId;
+    _saveState();
   }
 
   const fd = new FormData();
@@ -807,6 +805,15 @@ async function _streamToHolder(modelIdx, sessionId, msg, holderEl, abortCtrl) {
       credentials: 'same-origin',
       signal: abortCtrl.signal,
     });
+
+    // Stale session (server restarted) — recreate and retry once
+    if (res.status === 404) {
+      _participantSessions[modelIdx] = null;
+      _saveState();
+      await _streamToHolder(modelIdx, null, msg, holderEl, abortCtrl);
+      return;
+    }
+
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
 
@@ -941,7 +948,7 @@ export function restoreState(sessionId) {
       _active = true;
       _mode = s.mode || 'parallel';
       _models = s.models || [];
-      _participantSessions = s.participantSessions || [];
+      _participantSessions = new Array(_models.length).fill(null); // recreated lazily on first send
       _parentSessionId = s.parentSessionId;
       _roundRobinIdx = s.roundRobinIdx || 0;
       return true;
