@@ -176,6 +176,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
         skip_validation: str = Form(None),
         api_key: str = Form(""),
         endpoint_id: str = Form(""),
+        is_important: str = Form(None),
     ):
         skip_val = str(skip_validation).lower() == "true"
 
@@ -231,6 +232,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
             model=model_to_use,
             rag=str(rag).lower() == "true" if rag else False,
             owner=user,
+            is_important=str(is_important).lower() == "true" if is_important else False,
         )
         # Set auth headers for custom API-key endpoints
         resolved_key = api_key.strip() if api_key else ""
