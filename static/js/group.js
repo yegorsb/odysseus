@@ -641,7 +641,9 @@ export function stopGroup() {
   _active = false;
   _models = [];
   _participantSessions = [];
-  localStorage.removeItem(GROUP_STATE_KEY);
+  // Don't clear GROUP_STATE_KEY here — this is called on navigation-away too,
+  // and we need the config to survive so restoreState works when returning.
+  // GROUP_STATE_KEY is overwritten by startGroup → _saveState on new group creation.
 }
 
 // ── Send Message ─────────────────────────────────────
