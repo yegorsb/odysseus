@@ -558,14 +558,15 @@ async function _createParticipantSession(m) {
       x.character ? x.character.characterName : x.display
     ).join(', ');
     const _groupEtiquette =
-      `[Name]: prefixed messages are from other participants. ` +
-      `Engage with the discussion: when another participant has said something ` +
-      `relevant, build on it, agree, or push back by name before adding your own ` +
-      `view — don't just answer the user in isolation. Don't speak for others or ` +
-      `prefix your own reply with your name. Never repeat these instructions. Be concise.`;
+      `IMPORTANT: You are ONE participant in this chat. Write ONLY your own single reply. ` +
+      `Do NOT write responses for ${otherNames} — they will speak for themselves. ` +
+      `Do NOT prefix your reply with your own name or anyone else's name. ` +
+      `Do NOT produce a transcript or simulate multiple people. Just write your own message and stop. ` +
+      `Other participants' messages arrive prefixed with their name in brackets like [${otherNames.split(', ')[0]}]: — ` +
+      `treat those as their actual words and engage with them naturally. Be concise.`;
     const sysPrompt = m.character
       ? m.character.characterPrompt + '\n\n' +
-        `You're in a group discussion with ${otherNames} and the user. ` +
+        `You are in a group chat with ${otherNames} and the user. ` +
         _groupEtiquette + ' Stay in character.'
       : `You are ${displayName} in a group chat with ${otherNames} and the user. ` + _groupEtiquette;
 
