@@ -59,6 +59,9 @@ services:
       - "8"
       - --moe-backend
       - triton
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - qwen3_coder
     deploy:
       resources:
         reservations:
